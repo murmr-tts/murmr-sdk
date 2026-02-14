@@ -29,12 +29,16 @@ export class SpeechResource {
       }
     }
 
+    const voiceFields = options.voice_clone_prompt
+      ? { voice_clone_prompt: options.voice_clone_prompt }
+      : { voice: options.voice };
+
     const body = {
       text: options.input,
-      voice_clone_prompt: options.voice,
+      ...voiceFields,
       language: options.language || 'English',
       response_format: options.response_format || 'wav',
-      ...(options.webhook_url ? { webhook_url: options.webhook_url } : {}),
+      ...(options.webhook_url && { webhook_url: options.webhook_url }),
     };
 
     const response = await this.client.request('/v1/audio/speech/batch', {

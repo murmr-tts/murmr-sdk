@@ -8,7 +8,14 @@ export type AudioFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm';
 
 export interface SpeechCreateOptions {
   input: string;
+  /**
+   * Pass either `voice` (a voice ID like 'voice_xxx') or `voice_clone_prompt`
+   * (base64-encoded embedding data from /v1/voices/extract-embeddings).
+   * If both are provided, voice_clone_prompt takes precedence.
+   */
   voice: string;
+  /** Base64-encoded embedding data from /v1/voices/extract-embeddings */
+  voice_clone_prompt?: string;
   language?: string;
   response_format?: AudioFormat;
   webhook_url?: string;
@@ -57,13 +64,20 @@ export interface JobStatus {
   status: 'queued' | 'processing' | 'completed' | 'failed';
   created_at: string;
   completed_at: string | null;
-  duration_ms: number | null;
+  duration_ms?: number | null;
   error: string | null;
 }
 
 export interface LongFormOptions {
   input: string;
+  /**
+   * Pass either `voice` (a voice ID like 'voice_xxx') or `voice_clone_prompt`
+   * (base64-encoded embedding data from /v1/voices/extract-embeddings).
+   * If both are provided, voice_clone_prompt takes precedence.
+   */
   voice: string;
+  /** Base64-encoded embedding data from /v1/voices/extract-embeddings */
+  voice_clone_prompt?: string;
   language?: string;
   response_format?: AudioFormat;
   chunkSize?: number;

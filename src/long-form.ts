@@ -62,7 +62,9 @@ export async function createLongForm(
           method: 'POST',
           body: JSON.stringify({
             text: chunks[i],
-            voice_clone_prompt: options.voice,
+            ...(options.voice_clone_prompt
+              ? { voice_clone_prompt: options.voice_clone_prompt }
+              : { voice: options.voice }),
             language: options.language || 'English',
             response_format: format,
           }),
