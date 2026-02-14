@@ -65,7 +65,12 @@ function extractPcm(wavBuffer: Buffer): Buffer {
 /**
  * Concatenate audio chunks with optional silence between them.
  * For WAV: strips headers, concatenates PCM, adds single header.
- * For MP3/opus/etc: simple binary concatenation (frames are independently decodable).
+ * For PCM: concatenates raw samples directly.
+ * For MP3/opus/aac/flac: simple binary concatenation (frames are independently decodable).
+ *
+ * Note: `silenceBetweenMs` is only applied for WAV and PCM formats. For compressed
+ * formats (mp3/opus/aac/flac), chunks are binary-concatenated without silence since
+ * inserting silence in compressed streams would require re-encoding.
  */
 export function concatenateAudio(
   chunks: Buffer[],

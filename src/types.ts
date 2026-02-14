@@ -69,7 +69,7 @@ export interface LongFormOptions {
   chunkSize?: number;
   silenceBetweenChunksMs?: number;
   maxRetries?: number;
-  concurrency?: number;
+  startFromChunk?: number;
   onProgress?: (progress: LongFormProgress) => void;
 }
 

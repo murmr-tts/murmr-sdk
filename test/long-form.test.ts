@@ -10,6 +10,10 @@ function makeFakeWav(pcmBytes: number): ArrayBuffer {
   return wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength);
 }
 
+function mockHeaders(entries: Record<string, string> = {}): { get(name: string): string | null } {
+  return { get: (name: string) => entries[name] ?? null };
+}
+
 function createMockClient(
   requestFn: (path: string, options: RequestInit) => Promise<Response>,
 ): MurmrClient {
@@ -22,6 +26,7 @@ describe('createLongForm', () => {
   it('generates and concatenates chunks', async () => {
     const requestMock = vi.fn().mockResolvedValue({
       ok: true,
+      headers: mockHeaders(),
       arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
     });
 
@@ -49,6 +54,7 @@ describe('createLongForm', () => {
   it('calls onProgress for each chunk', async () => {
     const requestMock = vi.fn().mockResolvedValue({
       ok: true,
+      headers: mockHeaders(),
       arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
     });
 
@@ -79,6 +85,7 @@ describe('createLongForm', () => {
       }
       return Promise.resolve({
         ok: true,
+        headers: mockHeaders(),
         arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
       });
     });
@@ -146,6 +153,7 @@ describe('createLongForm', () => {
   it('passes correct parameters to API', async () => {
     const requestMock = vi.fn().mockResolvedValue({
       ok: true,
+      headers: mockHeaders(),
       arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
     });
 
@@ -164,5 +172,125 @@ describe('createLongForm', () => {
     expect(body.voice_clone_prompt).toBe('voice_abc123');
     expect(body.language).toBe('Japanese');
     expect(body.response_format).toBe('mp3');
+  });
+
+  it('startFromChunk skips first N chunks', async () => {
+    const requestMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: mockHeaders(),
+      arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
+    });
+
+    const client = createMockClient(requestMock);
+
+    // Text that produces 3+ chunks at 100 char limit
+    const text = Array.from({ length: 5 }, (_, i) =>
+      `This is sentence number ${i + 1} in the test.`,
+    ).join(' ');
+
+    const result = await client.speech.createLongForm({
+      input: text,
+      voice: 'voice_abc123',
+      chunkSize: 100,
+      silenceBetweenChunksMs: 0,
+      startFromChunk: 2,
+    });
+
+    // Should still report total chunks from the full text
+    expect(result.totalChunks).toBeGreaterThanOrEqual(3);
+    // But only generate audio for chunks after index 2
+    expect(requestMock).toHaveBeenCalledTimes(result.totalChunks - 2);
+  });
+
+  it('startFromChunk reports progress for skipped chunks', async () => {
+    const requestMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: mockHeaders(),
+      arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
+    });
+
+    const client = createMockClient(requestMock);
+    const progressCalls: Array<{ current: number; total: number; percent: number }> = [];
+
+    const text = Array.from({ length: 5 }, (_, i) =>
+      `This is sentence number ${i + 1} in the test.`,
+    ).join(' ');
+
+    const result = await client.speech.createLongForm({
+      input: text,
+      voice: 'voice_abc123',
+      chunkSize: 100,
+      silenceBetweenChunksMs: 0,
+      startFromChunk: 2,
+      onProgress: (p) => progressCalls.push({ ...p }),
+    });
+
+    // Progress should be reported for ALL chunks (including skipped)
+    expect(progressCalls.length).toBe(result.totalChunks);
+    // First progress call should be for chunk 1 (skipped)
+    expect(progressCalls[0].current).toBe(1);
+    // Last progress call should reach 100%
+    const last = progressCalls[progressCalls.length - 1];
+    expect(last.current).toBe(last.total);
+    expect(last.percent).toBe(100);
+  });
+
+  it('resume works with MurmrChunkError pattern', async () => {
+    let callCount = 0;
+    const failOnChunk2 = vi.fn().mockImplementation(() => {
+      callCount++;
+      // Fail on the 3rd API call (chunk index 2)
+      if (callCount === 3) {
+        return Promise.reject(new Error('Transient failure'));
+      }
+      return Promise.resolve({
+        ok: true,
+        headers: mockHeaders(),
+        arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
+      });
+    });
+
+    const client = createMockClient(failOnChunk2);
+
+    const text = Array.from({ length: 5 }, (_, i) =>
+      `This is sentence number ${i + 1} in the test.`,
+    ).join(' ');
+
+    // First attempt: fails at chunk 2
+    let chunkError: MurmrChunkError | null = null;
+    try {
+      await client.speech.createLongForm({
+        input: text,
+        voice: 'voice_abc123',
+        chunkSize: 100,
+        maxRetries: 0,
+      });
+    } catch (err) {
+      chunkError = err as MurmrChunkError;
+    }
+
+    expect(chunkError).toBeInstanceOf(MurmrChunkError);
+    expect(chunkError!.chunkIndex).toBe(2);
+    expect(chunkError!.completedChunks).toBe(2);
+
+    // Resume from the failed chunk
+    const resumeMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: mockHeaders(),
+      arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
+    });
+    const client2 = createMockClient(resumeMock);
+
+    const result = await client2.speech.createLongForm({
+      input: text,
+      voice: 'voice_abc123',
+      chunkSize: 100,
+      silenceBetweenChunksMs: 0,
+      startFromChunk: chunkError!.completedChunks,
+    });
+
+    // Should only generate from chunk 2 onward
+    expect(resumeMock).toHaveBeenCalledTimes(result.totalChunks - chunkError!.completedChunks);
+    expect(result.totalChunks).toBeGreaterThanOrEqual(3);
   });
 });

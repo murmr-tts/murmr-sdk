@@ -25,6 +25,7 @@ export async function createLongForm(
   const silenceMs = options.silenceBetweenChunksMs ?? DEFAULT_SILENCE_MS;
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
   const format: AudioFormat = options.response_format ?? 'wav';
+  const startFrom = options.startFromChunk ?? 0;
 
   const chunks = splitIntoChunks(options.input, chunkSize);
   if (chunks.length === 0) {
@@ -39,8 +40,19 @@ export async function createLongForm(
 
   const audioChunks: Buffer[] = [];
   let totalCharacters = 0;
+  let totalDurationMs = 0;
 
   for (let i = 0; i < chunks.length; i++) {
+    // Skip chunks before startFromChunk (still report progress)
+    if (i < startFrom) {
+      options.onProgress?.({
+        current: i + 1,
+        total: chunks.length,
+        percent: Math.round(((i + 1) / chunks.length) * 100),
+      });
+      continue;
+    }
+
     let lastError: Error | null = null;
     let succeeded = false;
 
@@ -55,6 +67,11 @@ export async function createLongForm(
             response_format: format,
           }),
         });
+
+        const durationHeader = audio.headers.get('X-Audio-Duration-Ms');
+        if (durationHeader) {
+          totalDurationMs += parseInt(durationHeader, 10) || 0;
+        }
 
         const arrayBuffer = await audio.arrayBuffer();
         audioChunks.push(Buffer.from(arrayBuffer));
@@ -94,7 +111,7 @@ export async function createLongForm(
   return {
     audio: concatenated,
     totalChunks: chunks.length,
-    durationMs: estimateDurationMs(concatenated, format),
+    durationMs: totalDurationMs > 0 ? totalDurationMs : estimateDurationMs(concatenated, format),
     format,
     characterCount: totalCharacters,
   };
