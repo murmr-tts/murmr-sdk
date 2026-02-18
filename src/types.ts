@@ -7,6 +7,7 @@ export interface MurmrClientOptions {
 export type AudioFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm';
 
 export interface SpeechCreateOptions {
+  /** Text to synthesize. Mapped to the API's `text` field. Max 4,096 characters. */
   input: string;
   /**
    * Pass either `voice` (a voice ID like 'voice_xxx') or `voice_clone_prompt`
@@ -22,35 +23,10 @@ export interface SpeechCreateOptions {
 }
 
 export interface VoiceDesignOptions {
+  /** Text to synthesize. Max 4,096 characters. */
   input: string;
   voice_description: string;
   language?: string;
-  response_format?: AudioFormat;
-}
-
-export interface VoiceSaveOptions {
-  name: string;
-  audio: Buffer;
-  description: string;
-  language?: string;
-}
-
-export interface SavedVoice {
-  id: string;
-  name: string;
-  language: string;
-  language_name: string;
-  description: string;
-  type: string;
-  created_at: string;
-  audio_preview_url?: string;
-}
-
-export interface VoiceListResponse {
-  voices: SavedVoice[];
-  saved_count: number;
-  saved_limit: number;
-  total: number;
 }
 
 export interface AsyncJobResponse {
@@ -66,9 +42,16 @@ export interface JobStatus {
   completed_at: string | null;
   duration_ms?: number | null;
   error: string | null;
+  /** Base64-encoded audio data, present when status is 'completed' */
+  audio_base64?: string;
+  /** Content type of the audio (e.g., 'audio/wav'), present when status is 'completed' */
+  content_type?: string;
+  /** Audio format used (e.g., 'wav'), present when status is 'completed' */
+  response_format?: string;
 }
 
 export interface LongFormOptions {
+  /** Text to synthesize. Can be any length — the SDK handles chunking automatically. */
   input: string;
   /**
    * Pass either `voice` (a voice ID like 'voice_xxx') or `voice_clone_prompt`
@@ -79,7 +62,6 @@ export interface LongFormOptions {
   /** Base64-encoded embedding data from /v1/voices/extract-embeddings */
   voice_clone_prompt?: string;
   language?: string;
-  response_format?: AudioFormat;
   chunkSize?: number;
   silenceBetweenChunksMs?: number;
   maxRetries?: number;
@@ -97,11 +79,11 @@ export interface LongFormResult {
   audio: Buffer;
   totalChunks: number;
   durationMs: number;
-  format: AudioFormat;
   characterCount: number;
 }
 
 export interface SpeechStreamOptions {
+  /** Text to synthesize. Max 4,096 characters. */
   input: string;
   voice: string;
   voice_clone_prompt?: string;
@@ -109,6 +91,7 @@ export interface SpeechStreamOptions {
 }
 
 export interface VoiceDesignStreamOptions {
+  /** Text to synthesize. Max 4,096 characters. */
   input: string;
   voice_description: string;
   language?: string;

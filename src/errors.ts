@@ -35,7 +35,15 @@ export class MurmrChunkError extends MurmrError {
     message: string,
     options: { chunkIndex: number; completedChunks: number; totalChunks: number; cause?: Error },
   ) {
-    super(message, { cause: options.cause });
+    const causeError = options.cause instanceof MurmrError ? options.cause : undefined;
+    super(message, {
+      status: causeError?.status,
+      type: causeError?.type,
+      code: causeError?.code,
+      concurrentLimit: causeError?.concurrentLimit,
+      concurrentActive: causeError?.concurrentActive,
+      cause: options.cause,
+    });
     this.name = 'MurmrChunkError';
     this.chunkIndex = options.chunkIndex;
     this.completedChunks = options.completedChunks;

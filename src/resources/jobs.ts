@@ -1,12 +1,7 @@
 import type { MurmrClient } from '../client';
 import type { JobStatus } from '../types';
 import { MurmrError } from '../errors';
-
-function validateId(id: string, label: string): void {
-  if (!id || !/^[\w-]+$/.test(id)) {
-    throw new MurmrError(`Invalid ${label}: must contain only alphanumeric characters, hyphens, or underscores`);
-  }
-}
+import { validateId } from '../validate';
 
 const MIN_POLL_INTERVAL = 1000;
 

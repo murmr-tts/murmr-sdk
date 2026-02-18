@@ -1,17 +1,21 @@
 import { describe, it, expect, vi } from 'vitest';
 import { MurmrClient } from '../src/client';
-import { MurmrChunkError } from '../src/errors';
-import { createWavHeader } from '../src/audio-concat';
+import { MurmrError, MurmrChunkError } from '../src/errors';
 
-function makeFakeWav(pcmBytes: number): ArrayBuffer {
-  const header = createWavHeader(pcmBytes);
+function createMockSSEResponse(pcmBytes: number): Response {
   const pcm = Buffer.alloc(pcmBytes, 0x42);
-  const wav = Buffer.concat([header, pcm]);
-  return wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength);
-}
-
-function mockHeaders(entries: Record<string, string> = {}): { get(name: string): string | null } {
-  return { get: (name: string) => entries[name] ?? null };
+  const base64 = pcm.toString('base64');
+  const sseData = `data: {"audio":"${base64}","chunk_index":0}\n\ndata: {"done":true,"total_chunks":1}\n\n`;
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(sseData));
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
 }
 
 function createMockClient(
@@ -24,12 +28,9 @@ function createMockClient(
 
 describe('createLongForm', () => {
   it('generates and concatenates chunks', async () => {
-    const requestMock = vi.fn().mockResolvedValue({
-      ok: true,
-      headers: mockHeaders(),
-      arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
-    });
-
+    const requestMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(createMockSSEResponse(480)),
+    );
     const client = createMockClient(requestMock);
 
     // Text long enough to require 2 chunks at 100 char limit
@@ -46,18 +47,18 @@ describe('createLongForm', () => {
 
     expect(result.audio.length).toBeGreaterThan(0);
     expect(result.totalChunks).toBeGreaterThanOrEqual(2);
-    expect(result.format).toBe('wav');
     expect(result.characterCount).toBeGreaterThan(0);
     expect(requestMock).toHaveBeenCalledTimes(result.totalChunks);
+
+    // Result should be a valid WAV file
+    expect(result.audio.toString('ascii', 0, 4)).toBe('RIFF');
+    expect(result.audio.toString('ascii', 8, 12)).toBe('WAVE');
   });
 
   it('calls onProgress for each chunk', async () => {
-    const requestMock = vi.fn().mockResolvedValue({
-      ok: true,
-      headers: mockHeaders(),
-      arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
-    });
-
+    const requestMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(createMockSSEResponse(480)),
+    );
     const client = createMockClient(requestMock);
     const progressCalls: Array<{ current: number; total: number; percent: number }> = [];
 
@@ -83,11 +84,7 @@ describe('createLongForm', () => {
       if (callCount <= 2) {
         return Promise.reject(new Error('Temporary failure'));
       }
-      return Promise.resolve({
-        ok: true,
-        headers: mockHeaders(),
-        arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
-      });
+      return Promise.resolve(createMockSSEResponse(480));
     });
 
     const client = createMockClient(requestMock);
@@ -137,6 +134,34 @@ describe('createLongForm', () => {
     }
   });
 
+  it('MurmrChunkError preserves MurmrError cause properties', async () => {
+    const apiError = new MurmrError('rate limited', {
+      status: 429,
+      type: 'rate_limit_exceeded',
+      code: 'RATE_LIMIT',
+      concurrentLimit: 3,
+      concurrentActive: 3,
+    });
+    const requestMock = vi.fn().mockRejectedValue(apiError);
+    const client = createMockClient(requestMock);
+
+    try {
+      await client.speech.createLongForm({
+        input: 'Some text here.',
+        voice: 'voice_abc123',
+        maxRetries: 0,
+      });
+      expect.fail('Should have thrown');
+    } catch (err) {
+      const chunkErr = err as MurmrChunkError;
+      expect(chunkErr.status).toBe(429);
+      expect(chunkErr.type).toBe('rate_limit_exceeded');
+      expect(chunkErr.code).toBe('RATE_LIMIT');
+      expect(chunkErr.concurrentLimit).toBe(3);
+      expect(chunkErr.concurrentActive).toBe(3);
+    }
+  });
+
   it('returns empty result for empty input', async () => {
     const client = createMockClient(vi.fn());
 
@@ -150,37 +175,104 @@ describe('createLongForm', () => {
     expect(result.characterCount).toBe(0);
   });
 
-  it('passes correct parameters to API', async () => {
-    const requestMock = vi.fn().mockResolvedValue({
-      ok: true,
-      headers: mockHeaders(),
-      arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
-    });
-
+  it('passes correct parameters to streaming endpoint', async () => {
+    const requestMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(createMockSSEResponse(480)),
+    );
     const client = createMockClient(requestMock);
 
     await client.speech.createLongForm({
       input: 'Test text.',
       voice: 'voice_abc123',
       language: 'Japanese',
-      response_format: 'mp3',
     });
 
     const [path, options] = requestMock.mock.calls[0];
-    expect(path).toBe('/v1/audio/speech');
+    expect(path).toBe('/v1/audio/speech/stream');
+    expect(options.method).toBe('POST');
+
     const body = JSON.parse((options as RequestInit).body as string);
     expect(body.voice).toBe('voice_abc123');
     expect(body.language).toBe('Japanese');
-    expect(body.response_format).toBe('mp3');
+    expect(body.text).toBe('Test text.');
+
+    // Streaming endpoint uses Accept: text/event-stream
+    expect(options.headers).toEqual({ Accept: 'text/event-stream' });
+  });
+
+  it('uses voice_clone_prompt instead of voice when provided', async () => {
+    const requestMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(createMockSSEResponse(480)),
+    );
+    const client = createMockClient(requestMock);
+
+    await client.speech.createLongForm({
+      input: 'Test text.',
+      voice: 'voice_abc123',
+      voice_clone_prompt: 'base64embeddings==',
+    });
+
+    const body = JSON.parse(requestMock.mock.calls[0][1].body as string);
+    expect(body.voice_clone_prompt).toBe('base64embeddings==');
+    expect(body.voice).toBeUndefined();
+  });
+
+  it('result audio is a valid WAV file', async () => {
+    const requestMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(createMockSSEResponse(480)),
+    );
+    const client = createMockClient(requestMock);
+
+    const result = await client.speech.createLongForm({
+      input: 'Test text.',
+      voice: 'voice_abc123',
+    });
+
+    // Verify RIFF header
+    expect(result.audio.toString('ascii', 0, 4)).toBe('RIFF');
+    expect(result.audio.toString('ascii', 8, 12)).toBe('WAVE');
+    // Verify fmt chunk
+    expect(result.audio.toString('ascii', 12, 16)).toBe('fmt ');
+    // Verify data chunk
+    expect(result.audio.toString('ascii', 36, 40)).toBe('data');
+  });
+
+  it('inserts silence between chunks', async () => {
+    const pcmSize = 480;
+    const requestMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(createMockSSEResponse(pcmSize)),
+    );
+    const client = createMockClient(requestMock);
+
+    // Text long enough to produce 2+ chunks at 100 char limit
+    const text = Array.from({ length: 5 }, (_, i) =>
+      `This is sentence number ${i + 1} in the test.`,
+    ).join(' ');
+
+    const resultNoSilence = await client.speech.createLongForm({
+      input: text,
+      voice: 'voice_abc123',
+      chunkSize: 100,
+      silenceBetweenChunksMs: 0,
+    });
+
+    const resultWithSilence = await client.speech.createLongForm({
+      input: text,
+      voice: 'voice_abc123',
+      chunkSize: 100,
+      silenceBetweenChunksMs: 400,
+    });
+
+    // With silence should be larger (400ms of silence at 24kHz, 16-bit = 19200 bytes)
+    if (resultNoSilence.totalChunks > 1) {
+      expect(resultWithSilence.audio.length).toBeGreaterThan(resultNoSilence.audio.length);
+    }
   });
 
   it('startFromChunk skips first N chunks', async () => {
-    const requestMock = vi.fn().mockResolvedValue({
-      ok: true,
-      headers: mockHeaders(),
-      arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
-    });
-
+    const requestMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(createMockSSEResponse(480)),
+    );
     const client = createMockClient(requestMock);
 
     // Text that produces 3+ chunks at 100 char limit
@@ -203,12 +295,9 @@ describe('createLongForm', () => {
   });
 
   it('startFromChunk reports progress for skipped chunks', async () => {
-    const requestMock = vi.fn().mockResolvedValue({
-      ok: true,
-      headers: mockHeaders(),
-      arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
-    });
-
+    const requestMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(createMockSSEResponse(480)),
+    );
     const client = createMockClient(requestMock);
     const progressCalls: Array<{ current: number; total: number; percent: number }> = [];
 
@@ -243,11 +332,7 @@ describe('createLongForm', () => {
       if (callCount === 3) {
         return Promise.reject(new Error('Transient failure'));
       }
-      return Promise.resolve({
-        ok: true,
-        headers: mockHeaders(),
-        arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
-      });
+      return Promise.resolve(createMockSSEResponse(480));
     });
 
     const client = createMockClient(failOnChunk2);
@@ -274,11 +359,9 @@ describe('createLongForm', () => {
     expect(chunkError!.completedChunks).toBe(2);
 
     // Resume from the failed chunk
-    const resumeMock = vi.fn().mockResolvedValue({
-      ok: true,
-      headers: mockHeaders(),
-      arrayBuffer: () => Promise.resolve(makeFakeWav(480)),
-    });
+    const resumeMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(createMockSSEResponse(480)),
+    );
     const client2 = createMockClient(resumeMock);
 
     const result = await client2.speech.createLongForm({
@@ -292,5 +375,22 @@ describe('createLongForm', () => {
     // Should only generate from chunk 2 onward
     expect(resumeMock).toHaveBeenCalledTimes(result.totalChunks - chunkError!.completedChunks);
     expect(result.totalChunks).toBeGreaterThanOrEqual(3);
+  });
+
+  it('durationMs estimate is reasonable', async () => {
+    const pcmSize = 48000; // 1 second at 24kHz 16-bit mono
+    const requestMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(createMockSSEResponse(pcmSize)),
+    );
+    const client = createMockClient(requestMock);
+
+    const result = await client.speech.createLongForm({
+      input: 'Test text.',
+      voice: 'voice_abc123',
+      silenceBetweenChunksMs: 0,
+    });
+
+    // 48000 bytes / (24000 * 1 * 2) = 1.0 second = 1000ms
+    expect(result.durationMs).toBe(1000);
   });
 });
