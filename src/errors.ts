@@ -1,12 +1,28 @@
 export class MurmrError extends Error {
   readonly status?: number;
   readonly code?: string;
+  /** For structured rate limit errors: 'rate_limit_exceeded' */
+  readonly type?: string;
+  /** For rate limit errors: max concurrent requests allowed */
+  readonly concurrentLimit?: number;
+  /** For rate limit errors: current in-flight requests */
+  readonly concurrentActive?: number;
 
-  constructor(message: string, options?: { status?: number; code?: string; cause?: Error }) {
+  constructor(message: string, options?: {
+    status?: number;
+    code?: string;
+    type?: string;
+    concurrentLimit?: number;
+    concurrentActive?: number;
+    cause?: Error;
+  }) {
     super(message, { cause: options?.cause });
     this.name = 'MurmrError';
     this.status = options?.status;
     this.code = options?.code;
+    this.type = options?.type;
+    this.concurrentLimit = options?.concurrentLimit;
+    this.concurrentActive = options?.concurrentActive;
   }
 }
 

@@ -101,6 +101,35 @@ export interface LongFormResult {
   characterCount: number;
 }
 
+export interface SpeechStreamOptions {
+  input: string;
+  voice: string;
+  voice_clone_prompt?: string;
+  language?: string;
+}
+
+export interface VoiceDesignStreamOptions {
+  input: string;
+  voice_description: string;
+  language?: string;
+}
+
+export interface AudioStreamChunk {
+  /** Base64-encoded PCM audio data (24kHz, mono, 16-bit) */
+  audio?: string;
+  /** Alias for audio — some SSE events use 'chunk' instead */
+  chunk?: string;
+  chunk_index?: number;
+  sample_rate?: number;
+  format?: string;
+  first_chunk_latency_ms?: number;
+  /** True when the stream is complete */
+  done?: boolean;
+  total_chunks?: number;
+  total_time_ms?: number;
+  error?: string;
+}
+
 export interface WebhookPayload {
   id: string;
   status: 'completed' | 'failed';

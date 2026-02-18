@@ -1,7 +1,8 @@
 import type { MurmrClient } from '../client';
-import type { SpeechCreateOptions, AsyncJobResponse, LongFormOptions, LongFormResult } from '../types';
+import type { SpeechCreateOptions, SpeechStreamOptions, AsyncJobResponse, AudioStreamChunk, LongFormOptions, LongFormResult } from '../types';
 import { MurmrError } from '../errors';
 import { createLongForm } from '../long-form';
+import { parseSSEStream } from '../streaming';
 
 export class SpeechResource {
   constructor(private readonly client: MurmrClient) {}
@@ -41,7 +42,7 @@ export class SpeechResource {
       ...(options.webhook_url && { webhook_url: options.webhook_url }),
     };
 
-    const response = await this.client.request('/v1/audio/speech/batch', {
+    const response = await this.client.request('/v1/audio/speech', {
       method: 'POST',
       body: JSON.stringify(body),
     });
@@ -52,6 +53,45 @@ export class SpeechResource {
 
     const arrayBuffer = await response.arrayBuffer();
     return Buffer.from(arrayBuffer);
+  }
+
+  /**
+   * Stream speech from text using a saved voice.
+   * Returns an async generator of PCM audio chunks.
+   *
+   * Usage:
+   *   const stream = await client.speech.stream({ input: 'Hello', voice: 'voice_xxx' });
+   *   for await (const chunk of stream) {
+   *     if (chunk.audio || chunk.chunk) {
+   *       const pcm = Buffer.from((chunk.audio || chunk.chunk)!, 'base64');
+   *     }
+   *   }
+   */
+  async stream(options: SpeechStreamOptions): Promise<AsyncGenerator<AudioStreamChunk>> {
+    if (!options.input?.trim()) {
+      throw new MurmrError('input text is required and cannot be empty');
+    }
+    if (!options.voice?.trim()) {
+      throw new MurmrError('voice ID is required');
+    }
+
+    const voiceFields = options.voice_clone_prompt
+      ? { voice_clone_prompt: options.voice_clone_prompt }
+      : { voice: options.voice };
+
+    const body = {
+      input: options.input,
+      ...voiceFields,
+      language: options.language || 'English',
+    };
+
+    const response = await this.client.request('/v1/audio/speech/stream', {
+      method: 'POST',
+      headers: { 'Accept': 'text/event-stream' },
+      body: JSON.stringify(body),
+    });
+
+    return parseSSEStream(response);
   }
 
   /**

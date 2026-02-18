@@ -167,9 +167,9 @@ describe('createLongForm', () => {
     });
 
     const [path, options] = requestMock.mock.calls[0];
-    expect(path).toBe('/v1/audio/speech/batch');
+    expect(path).toBe('/v1/audio/speech');
     const body = JSON.parse((options as RequestInit).body as string);
-    expect(body.voice_clone_prompt).toBe('voice_abc123');
+    expect(body.voice).toBe('voice_abc123');
     expect(body.language).toBe('Japanese');
     expect(body.response_format).toBe('mp3');
   });

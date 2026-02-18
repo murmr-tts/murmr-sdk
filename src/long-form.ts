@@ -58,7 +58,7 @@ export async function createLongForm(
 
     for (let retry = 0; retry <= maxRetries; retry++) {
       try {
-        const audio = await client.request('/v1/audio/speech/batch', {
+        const audio = await client.request('/v1/audio/speech', {
           method: 'POST',
           body: JSON.stringify({
             text: chunks[i],

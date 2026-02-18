@@ -1,6 +1,7 @@
 import type { MurmrClient } from '../client';
-import type { VoiceDesignOptions, VoiceSaveOptions, VoiceListResponse, SavedVoice } from '../types';
+import type { VoiceDesignOptions, VoiceDesignStreamOptions, VoiceSaveOptions, VoiceListResponse, SavedVoice, AudioStreamChunk } from '../types';
 import { MurmrError } from '../errors';
+import { parseSSEStream } from '../streaming';
 
 function validateId(id: string, label: string): void {
   if (!id || !/^[\w-]+$/.test(id)) {
@@ -36,13 +37,51 @@ export class VoicesResource {
       response_format: options.response_format || 'wav',
     };
 
-    const response = await this.client.request('/v1/voices/design/batch', {
+    const response = await this.client.request('/v1/voices/design', {
       method: 'POST',
       body: JSON.stringify(body),
     });
 
     const arrayBuffer = await response.arrayBuffer();
     return Buffer.from(arrayBuffer);
+  }
+
+  /**
+   * Stream speech with a voice description (VoiceDesign).
+   * Returns an async generator of PCM audio chunks.
+   *
+   * Usage:
+   *   const stream = await client.voices.designStream({
+   *     input: 'Hello',
+   *     voice_description: 'A warm female voice',
+   *   });
+   *   for await (const chunk of stream) {
+   *     if (chunk.audio || chunk.chunk) {
+   *       const pcm = Buffer.from((chunk.audio || chunk.chunk)!, 'base64');
+   *     }
+   *   }
+   */
+  async designStream(options: VoiceDesignStreamOptions): Promise<AsyncGenerator<AudioStreamChunk>> {
+    if (!options.input?.trim()) {
+      throw new MurmrError('input text is required and cannot be empty');
+    }
+    if (!options.voice_description?.trim()) {
+      throw new MurmrError('voice_description is required');
+    }
+
+    const body = {
+      input: options.input,
+      voice_description: options.voice_description,
+      language: options.language || 'English',
+    };
+
+    const response = await this.client.request('/v1/voices/design/stream', {
+      method: 'POST',
+      headers: { 'Accept': 'text/event-stream' },
+      body: JSON.stringify(body),
+    });
+
+    return parseSSEStream(response);
   }
 
   /** Save a generated voice for reuse */

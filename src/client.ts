@@ -46,13 +46,35 @@ export class MurmrClient {
 
     if (!response.ok) {
       let errorMessage: string;
+      let errorType: string | undefined;
+      let errorCode: string | undefined;
+      let concurrentLimit: number | undefined;
+      let concurrentActive: number | undefined;
       try {
-        const errorBody = await response.json() as { error?: string };
-        errorMessage = errorBody.error || `Request failed with status ${response.status}`;
+        const errorBody = await response.json() as {
+          error?: string | { type?: string; message?: string; code?: string; param?: string };
+        };
+        if (typeof errorBody.error === 'object' && errorBody.error !== null) {
+          // OpenAI-format structured error
+          errorMessage = errorBody.error.message || `Request failed with status ${response.status}`;
+          errorType = errorBody.error.type;
+          errorCode = errorBody.error.code ?? undefined;
+          // Concurrent info now in headers
+          concurrentLimit = parseInt(response.headers.get('X-Concurrent-Limit') || '0') || undefined;
+          concurrentActive = parseInt(response.headers.get('X-Concurrent-Active') || '0') || undefined;
+        } else {
+          errorMessage = (errorBody.error as string) || `Request failed with status ${response.status}`;
+        }
       } catch {
         errorMessage = `Request failed with status ${response.status}`;
       }
-      throw new MurmrError(errorMessage, { status: response.status });
+      throw new MurmrError(errorMessage, {
+        status: response.status,
+        type: errorType,
+        code: errorCode,
+        concurrentLimit,
+        concurrentActive,
+      });
     }
 
     return response;
