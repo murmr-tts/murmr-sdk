@@ -19,4 +19,9 @@ export type {
   LongFormProgress,
   LongFormResult,
   WebhookPayload,
+  SavedVoice,
+  VoiceListResponse,
+  VoiceSaveOptions,
+  VoiceSaveResponse,
+  VoiceDeleteResponse,
 } from './types';

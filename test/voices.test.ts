@@ -260,4 +260,144 @@ describe('VoicesResource', () => {
       expect(body.language).toBe('German');
     });
   });
+
+  describe('list()', () => {
+    it('calls GET /v1/voices', async () => {
+      const mockResponse = {
+        voices: [
+          { id: 'voice_abc123def456', name: 'My Voice', description: 'A warm voice', language: 'en', language_name: 'English', audio_preview_url: null, created_at: '2025-01-01T00:00:00Z' },
+        ],
+        saved_count: 1,
+        saved_limit: 10,
+        total: 1,
+      };
+      const requestMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(mockResponse), { status: 200 }),
+      );
+      const client = createMockClient(requestMock);
+
+      const result = await client.voices.list();
+
+      expect(requestMock).toHaveBeenCalledWith('/v1/voices');
+      expect(result.voices).toHaveLength(1);
+      expect(result.voices[0].name).toBe('My Voice');
+      expect(result.saved_count).toBe(1);
+      expect(result.saved_limit).toBe(10);
+    });
+
+    it('handles empty voice list', async () => {
+      const mockResponse = { voices: [], saved_count: 0, saved_limit: 3, total: 0 };
+      const requestMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(mockResponse), { status: 200 }),
+      );
+      const client = createMockClient(requestMock);
+
+      const result = await client.voices.list();
+      expect(result.voices).toHaveLength(0);
+      expect(result.total).toBe(0);
+    });
+  });
+
+  describe('save()', () => {
+    it('calls POST /v1/voices with correct body', async () => {
+      const mockResponse = {
+        id: 'voice_abc123def456',
+        name: 'Test Voice',
+        language: 'English',
+        description: 'A warm voice',
+        prompt_size_bytes: 1024,
+        created_at: '2025-01-01T00:00:00Z',
+        success: true,
+        has_audio_preview: true,
+      };
+      const requestMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(mockResponse), { status: 201 }),
+      );
+      const client = createMockClient(requestMock);
+
+      const audio = Buffer.from('fake-audio-data');
+      const result = await client.voices.save({
+        name: 'Test Voice',
+        audio,
+        description: 'A warm voice',
+      });
+
+      const [path, options] = requestMock.mock.calls[0];
+      expect(path).toBe('/v1/voices');
+      expect(options.method).toBe('POST');
+
+      const body = JSON.parse(options.body as string);
+      expect(body.name).toBe('Test Voice');
+      expect(body.audio).toBe(audio.toString('base64'));
+      expect(body.description).toBe('A warm voice');
+      expect(body.language).toBe('English');
+      expect(result.success).toBe(true);
+    });
+
+    it('encodes Uint8Array audio as base64', async () => {
+      const mockResponse = { id: 'voice_abc', name: 'V', language: 'en', description: 'd', prompt_size_bytes: 0, created_at: '', success: true, has_audio_preview: false };
+      const requestMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(mockResponse), { status: 201 }),
+      );
+      const client = createMockClient(requestMock);
+
+      const audio = new Uint8Array([1, 2, 3, 4]);
+      await client.voices.save({ name: 'V', audio, description: 'd' });
+
+      const body = JSON.parse(requestMock.mock.calls[0][1].body as string);
+      expect(body.audio).toBe(Buffer.from(audio).toString('base64'));
+    });
+
+    it('validates empty name', async () => {
+      const client = createMockClient(vi.fn());
+      await expect(
+        client.voices.save({ name: '', audio: Buffer.from('x'), description: 'desc' }),
+      ).rejects.toThrow('name is required');
+    });
+
+    it('validates name length over 50 chars', async () => {
+      const client = createMockClient(vi.fn());
+      await expect(
+        client.voices.save({ name: 'a'.repeat(51), audio: Buffer.from('x'), description: 'desc' }),
+      ).rejects.toThrow('50 characters');
+    });
+
+    it('validates empty audio', async () => {
+      const client = createMockClient(vi.fn());
+      await expect(
+        client.voices.save({ name: 'Test', audio: Buffer.alloc(0), description: 'desc' }),
+      ).rejects.toThrow('audio is required');
+    });
+
+    it('validates empty description', async () => {
+      const client = createMockClient(vi.fn());
+      await expect(
+        client.voices.save({ name: 'Test', audio: Buffer.from('x'), description: '' }),
+      ).rejects.toThrow('description is required');
+    });
+  });
+
+  describe('delete()', () => {
+    it('calls DELETE /v1/voices/:id', async () => {
+      const mockResponse = { success: true, id: 'voice_abc123def456', message: 'Voice "Test" deleted' };
+      const requestMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(mockResponse), { status: 200 }),
+      );
+      const client = createMockClient(requestMock);
+
+      const result = await client.voices.delete('voice_abc123def456');
+
+      const [path, options] = requestMock.mock.calls[0];
+      expect(path).toBe('/v1/voices/voice_abc123def456');
+      expect(options.method).toBe('DELETE');
+      expect(result.success).toBe(true);
+    });
+
+    it('validates voice ID format', async () => {
+      const client = createMockClient(vi.fn());
+      await expect(
+        client.voices.delete(''),
+      ).rejects.toThrow(MurmrError);
+    });
+  });
 });

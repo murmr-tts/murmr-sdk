@@ -123,3 +123,44 @@ export interface WebhookPayload {
   total_time_ms?: number;
   error?: string;
 }
+
+export interface SavedVoice {
+  id: string;
+  name: string;
+  description: string;
+  language: string;
+  language_name?: string;
+  audio_preview_url: string | null;
+  created_at: string;
+}
+
+export interface VoiceListResponse {
+  voices: SavedVoice[];
+  saved_count: number;
+  saved_limit: number;
+  total: number;
+}
+
+export interface VoiceSaveOptions {
+  name: string;
+  audio: Uint8Array | Buffer;
+  description: string;
+  language?: string;
+}
+
+export interface VoiceSaveResponse {
+  id: string;
+  name: string;
+  language: string;
+  description: string;
+  prompt_size_bytes: number;
+  created_at: string;
+  success: boolean;
+  has_audio_preview: boolean;
+}
+
+export interface VoiceDeleteResponse {
+  success: boolean;
+  id: string;
+  message: string;
+}

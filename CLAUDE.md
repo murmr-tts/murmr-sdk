@@ -62,6 +62,15 @@ Calls `/v1/voices/design/stream`, parses the SSE stream, returns the complete WA
 ### `voices.designStream(params)` — Voice Design (streaming)
 Returns an async generator of audio chunks from `/v1/voices/design/stream`.
 
+### `voices.list()` — List Saved Voices
+Lists all saved voices for the authenticated user. Returns voice metadata and plan limits.
+
+### `voices.save(params)` — Save a Voice
+Saves a VoiceDesign-generated voice for reuse. Accepts WAV audio (Buffer/Uint8Array), base64-encodes it, and extracts embeddings server-side.
+
+### `voices.delete(voiceId)` — Delete a Voice
+Deletes a saved voice by ID (e.g., `voice_abc123def456`).
+
 ### `jobs.get(jobId)` / `jobs.waitForCompletion(jobId)` — Job Management
 Poll or wait for async batch jobs.
 
@@ -90,10 +99,6 @@ Parses Server-Sent Events from fetch responses. `collectStreamAsWav()` and `coll
 - API limit: 4096 chars per request; long-form handles chunking automatically
 - `speech.create()` always returns 202 (RunPod Serverless is queue-based)
 - Streaming endpoints (`stream()`, `createLongForm()`) go to the dedicated pod via Cloudflare Tunnel
-
-## Known Gaps (v0.2.0)
-
-- **Voice management (list/save/delete) not exposed.** These routes only exist on the Next.js frontend, not the Cloudflare Worker. Requires adding routes to `murmr-worker` first.
 
 ## See Also
 
