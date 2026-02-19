@@ -250,6 +250,18 @@ try {
 | `get(jobId)`                        | `Promise<JobStatus>` | Get the status of an async job.       |
 | `waitForCompletion(jobId, options?)` | `Promise<JobStatus>` | Poll until job completes or fails.    |
 
+## Text Formatting
+
+Newline characters in your input text affect prosody:
+
+- `\n` (single newline) creates a **sentence-level breath pause**
+- `\n\n` (double newline) creates a **paragraph-level pause** with prosodic reset
+- No newlines in long text produces rushed, flat delivery
+
+**Best practice:** Insert `\n` between sentences and `\n\n` between paragraphs. Avoid text with hard line wraps every 60-80 characters (e.g., from PDFs or terminals) — this produces choppy output.
+
+See the [Text Formatting Guide](https://murmr.dev/en/docs/text-formatting) for details and preprocessing examples.
+
 ## Supported Languages
 
 Chinese, English, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian
