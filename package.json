@@ -43,6 +43,6 @@
   "homepage": "https://murmr.dev/en/docs/sdk",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/christi4nity/murmr-sdk.git"
+    "url": "git+https://github.com/murmr-tts/murmr-sdk.git"
   }
 }
