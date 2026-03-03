@@ -145,6 +145,8 @@ export interface VoiceSaveOptions {
   name: string;
   audio: Uint8Array | Buffer;
   description: string;
+  /** Transcript of the reference audio (required for ICL voice extraction). */
+  ref_text: string;
   language?: string;
 }
 

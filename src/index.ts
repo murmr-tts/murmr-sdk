@@ -3,7 +3,7 @@ export { MurmrError, MurmrChunkError } from './errors';
 export { splitIntoChunks } from './chunker';
 export { parseSSEStream, collectStreamAsWav, collectStreamAsPcm } from './streaming';
 export { concatenateAudio, generateSilence, createWavHeader, WAV_HEADER_SIZE, SAMPLE_RATE, CHANNELS, BITS_PER_SAMPLE, BYTES_PER_SAMPLE } from './audio-concat';
-export { validateInput, validateId, MAX_INPUT_LENGTH } from './validate';
+export { MAX_INPUT_LENGTH } from './validate';
 export type { CreateAndWaitOptions } from './resources/speech';
 export type {
   MurmrClientOptions,

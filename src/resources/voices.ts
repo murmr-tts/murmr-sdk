@@ -119,6 +119,9 @@ export class VoicesResource {
     if (!options.audio || options.audio.length === 0) {
       throw new MurmrError('audio is required');
     }
+    if (!options.ref_text?.trim()) {
+      throw new MurmrError('ref_text is required (transcript of the reference audio)');
+    }
 
     const audioBase64 = Buffer.from(options.audio).toString('base64');
 
@@ -129,6 +132,7 @@ export class VoicesResource {
         audio: audioBase64,
         description: options.description,
         language: options.language || 'English',
+        ref_text: options.ref_text,
       }),
     });
     return (await response.json()) as VoiceSaveResponse;

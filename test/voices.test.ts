@@ -320,6 +320,7 @@ describe('VoicesResource', () => {
         name: 'Test Voice',
         audio,
         description: 'A warm voice',
+        ref_text: 'Hello world',
       });
 
       const [path, options] = requestMock.mock.calls[0];
@@ -331,6 +332,7 @@ describe('VoicesResource', () => {
       expect(body.audio).toBe(audio.toString('base64'));
       expect(body.description).toBe('A warm voice');
       expect(body.language).toBe('English');
+      expect(body.ref_text).toBe('Hello world');
       expect(result.success).toBe(true);
     });
 
@@ -342,7 +344,7 @@ describe('VoicesResource', () => {
       const client = createMockClient(requestMock);
 
       const audio = new Uint8Array([1, 2, 3, 4]);
-      await client.voices.save({ name: 'V', audio, description: 'd' });
+      await client.voices.save({ name: 'V', audio, description: 'd', ref_text: 'test' });
 
       const body = JSON.parse(requestMock.mock.calls[0][1].body as string);
       expect(body.audio).toBe(Buffer.from(audio).toString('base64'));
@@ -351,29 +353,36 @@ describe('VoicesResource', () => {
     it('validates empty name', async () => {
       const client = createMockClient(vi.fn());
       await expect(
-        client.voices.save({ name: '', audio: Buffer.from('x'), description: 'desc' }),
+        client.voices.save({ name: '', audio: Buffer.from('x'), description: 'desc', ref_text: 'test' }),
       ).rejects.toThrow('name is required');
     });
 
     it('validates name length over 50 chars', async () => {
       const client = createMockClient(vi.fn());
       await expect(
-        client.voices.save({ name: 'a'.repeat(51), audio: Buffer.from('x'), description: 'desc' }),
+        client.voices.save({ name: 'a'.repeat(51), audio: Buffer.from('x'), description: 'desc', ref_text: 'test' }),
       ).rejects.toThrow('50 characters');
     });
 
     it('validates empty audio', async () => {
       const client = createMockClient(vi.fn());
       await expect(
-        client.voices.save({ name: 'Test', audio: Buffer.alloc(0), description: 'desc' }),
+        client.voices.save({ name: 'Test', audio: Buffer.alloc(0), description: 'desc', ref_text: 'test' }),
       ).rejects.toThrow('audio is required');
     });
 
     it('validates empty description', async () => {
       const client = createMockClient(vi.fn());
       await expect(
-        client.voices.save({ name: 'Test', audio: Buffer.from('x'), description: '' }),
+        client.voices.save({ name: 'Test', audio: Buffer.from('x'), description: '', ref_text: 'test' }),
       ).rejects.toThrow('description is required');
+    });
+
+    it('validates empty ref_text', async () => {
+      const client = createMockClient(vi.fn());
+      await expect(
+        client.voices.save({ name: 'Test', audio: Buffer.from('x'), description: 'desc', ref_text: '' }),
+      ).rejects.toThrow('ref_text is required');
     });
   });
 
