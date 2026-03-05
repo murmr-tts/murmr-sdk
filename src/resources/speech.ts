@@ -13,6 +13,29 @@ import { createLongForm } from '../long-form';
 import { parseSSEStream } from '../streaming';
 import { validateInput } from '../validate';
 
+/**
+ * Result of `speech.create()`.
+ *
+ * - Without `webhook_url` (default): sync mode → returns a `Response` with binary audio.
+ *   Use `.arrayBuffer()`, `.blob()`, or `.body` to consume the audio.
+ * - With `webhook_url`: async mode → returns `AsyncJobResponse` with a job ID for polling.
+ */
+export type SpeechCreateResult = Response | AsyncJobResponse;
+
+/**
+ * Type guard: returns true if the result is a sync audio Response.
+ */
+export function isSyncResponse(result: SpeechCreateResult): result is Response {
+  return result instanceof Response;
+}
+
+/**
+ * Type guard: returns true if the result is an async job response.
+ */
+export function isAsyncResponse(result: SpeechCreateResult): result is AsyncJobResponse {
+  return !(result instanceof Response) && 'id' in result && 'status' in result;
+}
+
 export interface CreateAndWaitOptions extends SpeechCreateOptions {
   /** Polling interval in milliseconds (minimum 1000). Default: 3000 */
   pollIntervalMs?: number;
@@ -26,18 +49,32 @@ export class SpeechResource {
   constructor(private readonly client: MurmrClient) {}
 
   /**
-   * Submit a batch speech generation job using a saved voice.
-   * Always returns an `AsyncJobResponse` with a job ID for polling.
+   * Generate speech from text using a saved voice.
    *
-   * Use `createAndWait()` for a convenience method that polls until completion.
+   * **Default (sync):** Returns a `Response` with binary audio bytes (HTTP 200).
+   * Matches OpenAI's `/v1/audio/speech` contract.
+   *
+   * **With `webhook_url`:** Returns `AsyncJobResponse` with a job ID (HTTP 202).
+   * Poll with `client.jobs.get(job.id)`.
    *
    * @example
    * ```ts
-   * const job = await client.speech.create({ input: 'Hello', voice: 'voice_xxx' });
-   * console.log(job.id); // poll with client.jobs.get(job.id)
+   * // Sync (default) — get audio directly
+   * const response = await client.speech.create({ input: 'Hello', voice: 'voice_xxx' });
+   * if (isSyncResponse(response)) {
+   *   const audioBuffer = await response.arrayBuffer();
+   * }
+   *
+   * // Async (webhook) — get job ID
+   * const job = await client.speech.create({
+   *   input: 'Hello', voice: 'voice_xxx', webhook_url: 'https://...'
+   * });
+   * if (isAsyncResponse(job)) {
+   *   console.log(job.id);
+   * }
    * ```
    */
-  async create(options: SpeechCreateOptions): Promise<AsyncJobResponse> {
+  async create(options: SpeechCreateOptions): Promise<SpeechCreateResult> {
     validateInput(options.input);
 
     if (!options.voice?.trim()) {
@@ -73,15 +110,20 @@ export class SpeechResource {
       body: JSON.stringify(body),
     });
 
+    // Sync mode (200): return raw Response with audio bytes
+    if (response.status === 200) {
+      return response;
+    }
+
+    // Async mode (202): parse job ID
     return (await response.json()) as AsyncJobResponse;
   }
 
   /**
-   * Submit a batch speech generation job and wait for completion.
-   * Combines `create()` with `client.jobs.waitForCompletion()`.
+   * Generate speech and wait for the audio result.
    *
-   * Returns the completed `JobStatus` which includes `audio_base64` with the
-   * generated audio data.
+   * If the server returns audio synchronously (default), returns immediately
+   * as a completed `JobStatus`. If async (webhook_url), polls until completion.
    *
    * @example
    * ```ts
@@ -90,14 +132,22 @@ export class SpeechResource {
    *   voice: 'voice_xxx',
    *   onPoll: (status) => console.log(status.status),
    * });
-   * const audioBuffer = Buffer.from(result.audio_base64!, 'base64');
+   * if (result.audio_base64) {
+   *   const audioBuffer = Buffer.from(result.audio_base64, 'base64');
+   * }
    * ```
    */
-  async createAndWait(options: CreateAndWaitOptions): Promise<JobStatus> {
+  async createAndWait(options: CreateAndWaitOptions): Promise<JobStatus | Response> {
     const { pollIntervalMs, timeoutMs, onPoll, ...createOptions } = options;
-    const job = await this.create(createOptions);
+    const result = await this.create(createOptions);
 
-    return this.client.jobs.waitForCompletion(job.id, {
+    // Sync response — audio already available
+    if (isSyncResponse(result)) {
+      return result;
+    }
+
+    // Async response — poll until completion
+    return this.client.jobs.waitForCompletion(result.id, {
       pollIntervalMs,
       timeoutMs,
       onPoll,

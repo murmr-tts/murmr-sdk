@@ -44,11 +44,13 @@ pnpm run typecheck    # tsc --noEmit
 
 ## API Surface
 
-### `speech.create(params)` — Batch TTS (async)
-Calls `/v1/audio/speech` via RunPod Serverless. Always returns `AsyncJobResponse` (HTTP 202). Use `speech.createAndWait()` or `jobs.waitForCompletion()` to get the result.
+### `speech.create(params)` — Batch TTS (sync default)
+Calls `/v1/audio/speech` via RunPod Serverless. Returns `SpeechCreateResult`:
+- **Default (no `webhook_url`):** Returns `Response` with binary audio bytes (HTTP 200). Use `isSyncResponse()` type guard, then `.arrayBuffer()` / `.blob()` to consume.
+- **With `webhook_url`:** Returns `AsyncJobResponse` (HTTP 202). Poll with `client.jobs.get()`.
 
 ### `speech.createAndWait(params)` — Batch TTS (blocking)
-Convenience wrapper: calls `create()` then polls until the job completes. Returns the audio `ArrayBuffer`.
+Convenience wrapper: calls `create()`. If sync response (default), returns immediately. If async, polls until the job completes.
 
 ### `speech.stream(params)` — SSE Streaming
 Calls `/v1/audio/speech/stream`. Returns an async generator of audio chunks via SSE.
@@ -97,7 +99,7 @@ Parses Server-Sent Events from fetch responses. `collectStreamAsWav()` and `coll
 - Zero runtime dependencies
 - Audio: 24kHz, mono, 16-bit PCM (matches Qwen3-TTS output)
 - API limit: 4096 chars per request; long-form handles chunking automatically
-- `speech.create()` always returns 202 (RunPod Serverless is queue-based)
+- `speech.create()` returns 200 with audio by default (sync via RunPod `/runsync`), or 202 when `webhook_url` is provided
 - Streaming endpoints (`stream()`, `createLongForm()`) go to the dedicated pod via Cloudflare Tunnel
 
 ## See Also

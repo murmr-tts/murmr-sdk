@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { MurmrClient } from '../src/client';
 import { MurmrError } from '../src/errors';
+import { isSyncResponse, isAsyncResponse } from '../src/resources/speech';
 import type { AsyncJobResponse, JobStatus } from '../src/types';
 
 function createMockClient(
@@ -11,11 +12,24 @@ function createMockClient(
   return client;
 }
 
-function createJsonResponse(data: unknown): Response {
+function createJsonResponse(data: unknown, status = 202): Response {
   return {
     ok: true,
+    status,
     json: () => Promise.resolve(data),
   } as unknown as Response;
+}
+
+function createAudioResponse(): Response {
+  const audioBytes = new Uint8Array([0x52, 0x49, 0x46, 0x46]); // RIFF header start
+  return new Response(audioBytes, {
+    status: 200,
+    headers: {
+      'Content-Type': 'audio/wav',
+      'X-Audio-Duration-Ms': '1500',
+      'X-Total-Time-Ms': '2300',
+    },
+  });
 }
 
 function createMockSSEResponse(pcmBytes: number): Response {
@@ -35,8 +49,36 @@ function createMockSSEResponse(pcmBytes: number): Response {
 }
 
 describe('SpeechResource', () => {
-  describe('create()', () => {
-    it('returns AsyncJobResponse from JSON response', async () => {
+  describe('create() — sync mode (default)', () => {
+    it('returns Response with audio bytes when server returns 200', async () => {
+      const client = createMockClient(() => Promise.resolve(createAudioResponse()));
+      const result = await client.speech.create({
+        input: 'Hello world',
+        voice: 'voice_xxx',
+      });
+
+      expect(isSyncResponse(result)).toBe(true);
+      expect(result).toBeInstanceOf(Response);
+      const response = result as Response;
+      expect(response.status).toBe(200);
+      expect(response.headers.get('Content-Type')).toBe('audio/wav');
+    });
+
+    it('audio bytes are consumable from sync response', async () => {
+      const client = createMockClient(() => Promise.resolve(createAudioResponse()));
+      const result = await client.speech.create({
+        input: 'Hello world',
+        voice: 'voice_xxx',
+      });
+
+      expect(isSyncResponse(result)).toBe(true);
+      const buffer = await (result as Response).arrayBuffer();
+      expect(buffer.byteLength).toBe(4); // RIFF bytes
+    });
+  });
+
+  describe('create() — async mode (webhook)', () => {
+    it('returns AsyncJobResponse when server returns 202', async () => {
       const jobResponse: AsyncJobResponse = {
         id: 'job_abc123',
         status: 'queued',
@@ -47,13 +89,34 @@ describe('SpeechResource', () => {
       const result = await client.speech.create({
         input: 'Hello world',
         voice: 'voice_xxx',
+        webhook_url: 'https://example.com/hook',
       });
 
-      expect(result).toEqual(jobResponse);
-      expect(result.id).toBe('job_abc123');
-      expect(result.status).toBe('queued');
+      expect(isAsyncResponse(result)).toBe(true);
+      expect(isSyncResponse(result)).toBe(false);
+      const job = result as AsyncJobResponse;
+      expect(job.id).toBe('job_abc123');
+      expect(job.status).toBe('queued');
     });
 
+    it('sends webhook_url in request body', async () => {
+      const requestMock = vi.fn().mockResolvedValue(
+        createJsonResponse({ id: 'job_123', status: 'queued', created_at: '2026-02-18T00:00:00Z' }),
+      );
+      const client = createMockClient(requestMock);
+
+      await client.speech.create({
+        input: 'Hello',
+        voice: 'voice_xxx',
+        webhook_url: 'https://example.com/webhook',
+      });
+
+      const body = JSON.parse(requestMock.mock.calls[0][1].body as string);
+      expect(body.webhook_url).toBe('https://example.com/webhook');
+    });
+  });
+
+  describe('create() — validation', () => {
     it('validates empty input', async () => {
       const client = createMockClient(vi.fn());
 
@@ -119,27 +182,11 @@ describe('SpeechResource', () => {
         }),
       ).rejects.toThrow('webhook_url is not a valid URL');
     });
+  });
 
-    it('accepts valid HTTPS webhook_url', async () => {
-      const requestMock = vi.fn().mockResolvedValue(
-        createJsonResponse({ id: 'job_123', status: 'queued', created_at: '2026-02-18T00:00:00Z' }),
-      );
-      const client = createMockClient(requestMock);
-
-      await client.speech.create({
-        input: 'Hello',
-        voice: 'voice_xxx',
-        webhook_url: 'https://example.com/webhook',
-      });
-
-      const body = JSON.parse(requestMock.mock.calls[0][1].body as string);
-      expect(body.webhook_url).toBe('https://example.com/webhook');
-    });
-
+  describe('create() — request body', () => {
     it('sends text field mapped from options.input', async () => {
-      const requestMock = vi.fn().mockResolvedValue(
-        createJsonResponse({ id: 'job_123', status: 'queued', created_at: '2026-02-18T00:00:00Z' }),
-      );
+      const requestMock = vi.fn().mockResolvedValue(createAudioResponse());
       const client = createMockClient(requestMock);
 
       await client.speech.create({ input: 'Hello world', voice: 'voice_xxx' });
@@ -150,9 +197,7 @@ describe('SpeechResource', () => {
     });
 
     it('uses voice_clone_prompt when provided', async () => {
-      const requestMock = vi.fn().mockResolvedValue(
-        createJsonResponse({ id: 'job_123', status: 'queued', created_at: '2026-02-18T00:00:00Z' }),
-      );
+      const requestMock = vi.fn().mockResolvedValue(createAudioResponse());
       const client = createMockClient(requestMock);
 
       await client.speech.create({
@@ -167,9 +212,7 @@ describe('SpeechResource', () => {
     });
 
     it('sends voice when voice_clone_prompt is not provided', async () => {
-      const requestMock = vi.fn().mockResolvedValue(
-        createJsonResponse({ id: 'job_123', status: 'queued', created_at: '2026-02-18T00:00:00Z' }),
-      );
+      const requestMock = vi.fn().mockResolvedValue(createAudioResponse());
       const client = createMockClient(requestMock);
 
       await client.speech.create({ input: 'Hello', voice: 'voice_xxx' });
@@ -180,9 +223,7 @@ describe('SpeechResource', () => {
     });
 
     it('sends correct endpoint and default parameters', async () => {
-      const requestMock = vi.fn().mockResolvedValue(
-        createJsonResponse({ id: 'job_123', status: 'queued', created_at: '2026-02-18T00:00:00Z' }),
-      );
+      const requestMock = vi.fn().mockResolvedValue(createAudioResponse());
       const client = createMockClient(requestMock);
 
       await client.speech.create({ input: 'Hello', voice: 'voice_xxx' });
@@ -197,9 +238,7 @@ describe('SpeechResource', () => {
     });
 
     it('sends custom language and response_format', async () => {
-      const requestMock = vi.fn().mockResolvedValue(
-        createJsonResponse({ id: 'job_123', status: 'queued', created_at: '2026-02-18T00:00:00Z' }),
-      );
+      const requestMock = vi.fn().mockResolvedValue(createAudioResponse());
       const client = createMockClient(requestMock);
 
       await client.speech.create({
@@ -212,6 +251,28 @@ describe('SpeechResource', () => {
       const body = JSON.parse(requestMock.mock.calls[0][1].body as string);
       expect(body.language).toBe('French');
       expect(body.response_format).toBe('mp3');
+    });
+  });
+
+  describe('type guards', () => {
+    it('isSyncResponse returns true for Response objects', () => {
+      const response = new Response('test');
+      expect(isSyncResponse(response)).toBe(true);
+    });
+
+    it('isSyncResponse returns false for AsyncJobResponse', () => {
+      const job: AsyncJobResponse = { id: 'job_123', status: 'queued', created_at: '2026-01-01' };
+      expect(isSyncResponse(job)).toBe(false);
+    });
+
+    it('isAsyncResponse returns true for AsyncJobResponse', () => {
+      const job: AsyncJobResponse = { id: 'job_123', status: 'queued', created_at: '2026-01-01' };
+      expect(isAsyncResponse(job)).toBe(true);
+    });
+
+    it('isAsyncResponse returns false for Response objects', () => {
+      const response = new Response('test');
+      expect(isAsyncResponse(response)).toBe(false);
     });
   });
 
@@ -291,7 +352,20 @@ describe('SpeechResource', () => {
   });
 
   describe('createAndWait()', () => {
-    it('calls create then polls via client.jobs.waitForCompletion', async () => {
+    it('returns sync Response immediately when server returns 200', async () => {
+      const requestMock = vi.fn().mockResolvedValue(createAudioResponse());
+      const client = createMockClient(requestMock);
+
+      const result = await client.speech.createAndWait({
+        input: 'Hello world',
+        voice: 'voice_xxx',
+      });
+
+      expect(result).toBeInstanceOf(Response);
+      expect((result as Response).status).toBe(200);
+    });
+
+    it('polls via client.jobs.waitForCompletion for 202 responses', async () => {
       const jobResponse: AsyncJobResponse = {
         id: 'job_abc123',
         status: 'queued',
@@ -316,6 +390,7 @@ describe('SpeechResource', () => {
       const result = await client.speech.createAndWait({
         input: 'Hello world',
         voice: 'voice_xxx',
+        webhook_url: 'https://example.com/hook',
         pollIntervalMs: 1000,
         timeoutMs: 30000,
       });
@@ -351,6 +426,7 @@ describe('SpeechResource', () => {
       await client.speech.createAndWait({
         input: 'Hello',
         voice: 'voice_xxx',
+        webhook_url: 'https://example.com/hook',
         onPoll,
       });
 
