@@ -166,3 +166,17 @@ export interface VoiceDeleteResponse {
   id: string;
   message: string;
 }
+
+export interface ExtractEmbeddingsOptions {
+  /** Base64-encoded or raw audio buffer to extract embeddings from */
+  audio: Buffer | Uint8Array;
+  /** Transcript of the reference audio (improves extraction quality) */
+  ref_text: string;
+}
+
+export interface ExtractEmbeddingsResponse {
+  /** Base64-encoded embedding data — pass as voice_clone_prompt in TTS requests */
+  prompt_data: string;
+  /** Size of the embedding in bytes */
+  prompt_size_bytes: number;
+}

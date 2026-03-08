@@ -25,4 +25,6 @@ export type {
   VoiceSaveOptions,
   VoiceSaveResponse,
   VoiceDeleteResponse,
+  ExtractEmbeddingsOptions,
+  ExtractEmbeddingsResponse,
 } from './types';

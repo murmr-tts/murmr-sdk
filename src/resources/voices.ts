@@ -7,6 +7,8 @@ import type {
   VoiceSaveOptions,
   VoiceSaveResponse,
   VoiceDeleteResponse,
+  ExtractEmbeddingsOptions,
+  ExtractEmbeddingsResponse,
 } from '../types';
 import { MurmrError } from '../errors';
 import { parseSSEStream, collectStreamAsWav } from '../streaming';
@@ -147,5 +149,63 @@ export class VoicesResource {
       method: 'DELETE',
     });
     return (await response.json()) as VoiceDeleteResponse;
+  }
+
+  /**
+   * Extract voice embeddings from audio.
+   *
+   * Returns portable embedding data that can be stored in your own database
+   * and passed via `voice_clone_prompt` in any TTS request — no saved voice
+   * ID needed.
+   *
+   * @example
+   * ```ts
+   * const { prompt_data } = await client.voices.extractEmbeddings({
+   *   audio: wavBuffer,
+   *   ref_text: 'The transcript of the audio.',
+   * });
+   * // Store prompt_data in your database, then use it:
+   * const stream = await client.speech.stream({
+   *   input: 'Hello!',
+   *   voice: 'unused',
+   *   voice_clone_prompt: prompt_data,
+   * });
+   * ```
+   */
+  async extractEmbeddings(
+    options: ExtractEmbeddingsOptions,
+  ): Promise<ExtractEmbeddingsResponse> {
+    if (!options.audio || options.audio.length === 0) {
+      throw new MurmrError('audio is required');
+    }
+    if (!options.ref_text?.trim()) {
+      throw new MurmrError('ref_text is required (transcript of the reference audio)');
+    }
+
+    const audioBase64 = Buffer.from(options.audio).toString('base64');
+
+    const response = await this.client.request('/v1/voices/extract-embeddings', {
+      method: 'POST',
+      body: JSON.stringify({
+        audio: audioBase64,
+        ref_text: options.ref_text,
+      }),
+    });
+
+    const result = (await response.json()) as {
+      success?: boolean;
+      prompt_data?: string;
+      prompt_size_bytes?: number;
+      error?: string;
+    };
+
+    if (!result.prompt_data) {
+      throw new MurmrError(result.error || 'Failed to extract embeddings');
+    }
+
+    return {
+      prompt_data: result.prompt_data,
+      prompt_size_bytes: result.prompt_size_bytes ?? 0,
+    };
   }
 }

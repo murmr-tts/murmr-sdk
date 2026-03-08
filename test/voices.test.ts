@@ -386,6 +386,88 @@ describe('VoicesResource', () => {
     });
   });
 
+  describe('extractEmbeddings()', () => {
+    it('calls POST /v1/voices/extract-embeddings with correct body', async () => {
+      const mockResponse = {
+        success: true,
+        prompt_data: 'base64-embedding-data',
+        prompt_size_bytes: 1024,
+      };
+      const requestMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(mockResponse), { status: 200 }),
+      );
+      const client = createMockClient(requestMock);
+
+      const audio = Buffer.from('fake-audio-data');
+      const result = await client.voices.extractEmbeddings({
+        audio,
+        ref_text: 'Hello world',
+      });
+
+      const [path, options] = requestMock.mock.calls[0];
+      expect(path).toBe('/v1/voices/extract-embeddings');
+      expect(options.method).toBe('POST');
+
+      const body = JSON.parse(options.body as string);
+      expect(body.audio).toBe(audio.toString('base64'));
+      expect(body.ref_text).toBe('Hello world');
+      expect(result.prompt_data).toBe('base64-embedding-data');
+      expect(result.prompt_size_bytes).toBe(1024);
+    });
+
+    it('encodes Uint8Array audio as base64', async () => {
+      const mockResponse = { success: true, prompt_data: 'data', prompt_size_bytes: 0 };
+      const requestMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(mockResponse), { status: 200 }),
+      );
+      const client = createMockClient(requestMock);
+
+      const audio = new Uint8Array([1, 2, 3, 4]);
+      await client.voices.extractEmbeddings({ audio, ref_text: 'test' });
+
+      const body = JSON.parse(requestMock.mock.calls[0][1].body as string);
+      expect(body.audio).toBe(Buffer.from(audio).toString('base64'));
+    });
+
+    it('validates empty audio', async () => {
+      const client = createMockClient(vi.fn());
+      await expect(
+        client.voices.extractEmbeddings({ audio: Buffer.alloc(0), ref_text: 'test' }),
+      ).rejects.toThrow('audio is required');
+    });
+
+    it('validates empty ref_text', async () => {
+      const client = createMockClient(vi.fn());
+      await expect(
+        client.voices.extractEmbeddings({ audio: Buffer.from('x'), ref_text: '' }),
+      ).rejects.toThrow('ref_text is required');
+    });
+
+    it('throws on error response', async () => {
+      const mockResponse = { success: false, error: 'Invalid audio format' };
+      const requestMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(mockResponse), { status: 200 }),
+      );
+      const client = createMockClient(requestMock);
+
+      await expect(
+        client.voices.extractEmbeddings({ audio: Buffer.from('x'), ref_text: 'test' }),
+      ).rejects.toThrow('Invalid audio format');
+    });
+
+    it('throws generic error when no prompt_data and no error message', async () => {
+      const mockResponse = { success: false };
+      const requestMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(mockResponse), { status: 200 }),
+      );
+      const client = createMockClient(requestMock);
+
+      await expect(
+        client.voices.extractEmbeddings({ audio: Buffer.from('x'), ref_text: 'test' }),
+      ).rejects.toThrow('Failed to extract embeddings');
+    });
+  });
+
   describe('delete()', () => {
     it('calls DELETE /v1/voices/:id', async () => {
       const mockResponse = { success: true, id: 'voice_abc123def456', message: 'Voice "Test" deleted' };
