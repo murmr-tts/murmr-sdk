@@ -45,7 +45,7 @@ pnpm run typecheck    # tsc --noEmit
 ## API Surface
 
 ### `speech.create(params)` — Batch TTS (sync default)
-Calls `/v1/audio/speech` via RunPod Serverless. Returns `SpeechCreateResult`:
+Calls `/v1/audio/speech` via Dedicated Pod. Returns `SpeechCreateResult`:
 - **Default (no `webhook_url`):** Returns `Response` with binary audio bytes (HTTP 200). Use `isSyncResponse()` type guard, then `.arrayBuffer()` / `.blob()` to consume.
 - **With `webhook_url`:** Returns `AsyncJobResponse` (HTTP 202). Poll with `client.jobs.get()`.
 
@@ -99,7 +99,7 @@ Parses Server-Sent Events from fetch responses. `collectStreamAsWav()` and `coll
 - Zero runtime dependencies
 - Audio: 24kHz, mono, 16-bit PCM (matches Qwen3-TTS output)
 - API limit: 4096 chars per request; long-form handles chunking automatically
-- `speech.create()` returns 200 with audio by default (sync via RunPod `/runsync`), or 202 when `webhook_url` is provided
+- `speech.create()` returns 200 with binary audio by default (sync via Dedicated Pod), or 202 when `webhook_url` is provided (async via RunPod Serverless)
 - Streaming endpoints (`stream()`, `createLongForm()`) go to the dedicated pod via Cloudflare Tunnel
 
 ## See Also
