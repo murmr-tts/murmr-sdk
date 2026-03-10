@@ -1,3 +1,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Context7 exports (live in separate repo)
+context7.json
+docs/
